@@ -1,0 +1,51 @@
+name: Logic Bug Scan
+run-name: Logic bug scan · ${{ github.ref_name }} · ${{ github.actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      fail_on_high:
+        description: 将发现高风险问题的运行标记为失败（默认仅生成报告）
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: logic-bug-scan-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: Scan Python logic and publish risk report
+    runs-on: [self-hosted, AWS+UAT_GR_01]
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Scan and review candidate bugs
+        env:
+          NEW_API_KEY: ${{ secrets.NEW_API_KEY }}
+          FAIL_ON_HIGH: ${{ inputs.fail_on_high }}
+        run: python scripts/scan_logic_bugs.py --output-dir bug-scan-report
+
+      - name: Upload Markdown and JSON reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logic-bug-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: bug-scan-report/
+          if-no-files-found: error
+          retention-days: 30
